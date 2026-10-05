@@ -2,7 +2,6 @@ name: Build JARVIS APK
 
 on:
   workflow_dispatch:
-
   push:
     branches:
       - main
@@ -31,12 +30,16 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      # 4. Install unzip
-      - name: Install unzip
+      # 4. Install required tools
+      - name: Install tools
         shell: bash
         run: |
+          set -e
+
           sudo apt-get update
           sudo apt-get install -y unzip
+
+          sdkmanager --install "platform-tools"
 
       # 5. Setup Gradle
       - name: Setup Gradle
@@ -56,7 +59,7 @@ jobs:
           ZIP_FILE=$(find . \
             -path './.git' -prune -o \
             -type f \
-            -iname '*.zip' \
+            -iname '*.zip' \
             -print -quit)
 
           if [ -z "$ZIP_FILE" ]; then
@@ -68,9 +71,6 @@ jobs:
           echo "$ZIP_FILE"
 
           unzip -o "$ZIP_FILE" -d extracted
-
-          echo ""
-          echo "ZIP extracted successfully."
 
           echo ""
           echo "===== EXTRACTED FILES ====="
@@ -99,11 +99,11 @@ jobs:
           done < <(
             find extracted \
               -type f \
-              \
+              \( \
                 -name "settings.gradle" \
                 -o \
                 -name "settings.gradle.kts" \
-              \
+              \) \
               -print
           )
 
@@ -116,7 +116,7 @@ jobs:
 
             find extracted \
               -type f \
-              \
+              \( \
                 -name "build.gradle" \
                 -o \
                 -name "build.gradle.kts" \
@@ -124,7 +124,7 @@ jobs:
                 -name "settings.gradle" \
                 -o \
                 -name "settings.gradle.kts" \
-              \
+              \) \
               -print
 
             exit 1
@@ -155,7 +155,7 @@ jobs:
           echo "===== ANDROID PROJECT ====="
 
           find android-project \
-            -maxdepth 4 \
+            -maxdepth 5 \
             -type f \
             | sort \
             | head -300
@@ -179,42 +179,76 @@ jobs:
           else
 
             echo "Gradle Wrapper is missing."
-            echo "Creating a new Gradle Wrapper..."
-
-            cd ..
-
-            rm -rf wrapper-generator
-            mkdir -p wrapper-generator
-
-            cd wrapper-generator
-
-            cat > settings.gradle <<'EOF'
-pluginManagement {
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
-
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
-
-rootProject.name = "WrapperGenerator"
-EOF
-
-            cat > build.gradle <<'EOF'
-plugins {
-}
-EOF
+            echo "Creating Gradle Wrapper with Gradle 8.7..."
 
             gradle wrapper --gradle-version 8.7
 
-            cd ..
+          fi
 
-            cp wrapper-generator/gradlew android-project
+          chmod +x ./gradlew
+
+          echo ""
+          echo "===== GRADLE WRAPPER ====="
+
+          ls -la ./gradlew
+          ls -la ./gradle/wrapper/
+
+      # 10. Check Gradle
+      - name: Check Gradle
+        shell: bash
+        run: |
+          set -e
+
+          cd android-project
+
+          ./gradlew --version
+
+      # 11. Build JARVIS Debug APK
+      - name: Build JARVIS APK
+        shell: bash
+        run: |
+          set -e
+
+          cd android-project
+
+          echo "Starting JARVIS APK build..."
+
+          ./gradlew assembleDebug \
+            --stacktrace \
+            --no-daemon
+
+      # 12. Find APK
+      - name: Find APK
+        shell: bash
+        run: |
+          set -e
+
+          echo "===== APK FILES ====="
+
+          find android-project \
+            -type f \
+            -name "*.apk" \
+            -print
+
+          APK_FILE=$(find android-project \
+            -type f \
+            -name "*.apk" \
+            -print -quit)
+
+          if [ -z "$APK_FILE" ]; then
+            echo "ERROR: APK was not generated."
+            exit 1
+          fi
+
+          echo "APK found:"
+          echo "$APK_FILE"
+
+          cp "$APK_FILE" JARVIS-debug.apk
+
+      # 13. Upload APK
+      - name: Upload JARVIS APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: JARVIS-APK
+          path: JARVIS-debug.apk
+          if-no-files-found: error
