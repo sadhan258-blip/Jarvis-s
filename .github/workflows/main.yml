@@ -1,4 +1,4 @@
-Name: Build JARVIS APK
+name: Build JARVIS APK
 
 on:
   workflow_dispatch:
