@@ -29,13 +29,13 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      # ৪. Gradle সেটআপ (স্বয়ংক্রিয় ক্যাশিং সহ)
+      # ৪. Gradle সেটআপ
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      # ৫. ZIP ফাইল এক্সট্র্যাক্ট করা
+      # ৫. ZIP ফাইল থেকে প্রজেক্ট এক্সট্র্যাক্ট করা
       - name: Extract JARVIS Project
         shell: bash
         run: |
@@ -51,23 +51,25 @@ jobs:
             -print -quit)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "::error::No ZIP file found in the repository root."
+            echo "::error::No ZIP file found in the repository."
             exit 1
           fi
 
           echo "Found ZIP: $ZIP_FILE"
           unzip -q -o "$ZIP_FILE" -d extracted
 
-      # ৬. অ্যান্ডকিং প্রজেক্ট খুঁজে বের করা এবং প্রস্তুত করা
+      # ৬. অ্যান্ড্রয়েড প্রজেক্ট খুঁজে বের করা
       - name: Locate and Prepare Android Project
         shell: bash
         run: |
           set -e
 
-          SETTINGS_FILE=$(find extracted -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) -print -quit)
+          SETTINGS_FILE=$(find extracted -type f \
+            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            -print -quit)
 
           if [ -z "$SETTINGS_FILE" ]; then
-            echo "::error::No settings.gradle or settings.gradle.kts file found."
+            echo "::error::No settings.gradle or settings.gradle.kts found."
             exit 1
           fi
 
@@ -76,40 +78,41 @@ jobs:
 
           rm -rf android-project
           mkdir -p android-project
-          
-          # হিডেন ফাইল এবং ফাইল পারমিশন বজায় রেখে কপি করার জন্য cp -a ব্যবহার করা হয়েছে
+
           cp -a "$PROJECT_DIR"/. android-project/
 
-      # ৭. Gradle Wrapper নিশ্চিত করা
+      # ৭. Gradle Wrapper ফাইল যাচাই ও তৈরি
       - name: Ensure Gradle Wrapper
         shell: bash
         run: |
           set -e
+
           cd android-project
 
-          if [ ! -f "./gradlew" ] || [ ! -f "./gradle/wrapper/gradle-wrapper.jar" ]; then
-            echo "Gradle wrapper missing. Generating Wrapper..."
+          if [ ! -f "./gradlew" ] || \
+             [ ! -f "./gradle/wrapper/gradle-wrapper.jar" ]; then
+
+            echo "Gradle wrapper missing. Generating Gradle Wrapper..."
             gradle wrapper --gradle-version 8.7
           fi
 
           chmod +x ./gradlew
 
-      # ৮. APK বিল্ড করা
+      # ৮. Debug APK বিল্ড তৈরি
       - name: Build Debug APK
         shell: bash
         run: |
           set -e
-          cd android-project
 
+          cd android-project
           ./gradlew assembleDebug --stacktrace --no-daemon
 
       # ৯. তৈরি হওয়া APK খুঁজে বের করা
-      - name: Stage APK Output
+      - name: Locate Output APK
         shell: bash
         run: |
           set -e
 
-          # মূল APK লোকেশনে প্রথমে খোঁজা হবে
           APK_FILE=$(find android-project/app/build/outputs/apk/debug -type f -name "*.apk" -print -quit 2>/dev/null || \
                      find android-project -type f -name "*debug*.apk" -print -quit)
 
@@ -121,7 +124,7 @@ jobs:
           echo "Found APK at: $APK_FILE"
           cp "$APK_FILE" JARVIS-debug.apk
 
-      # ১০. APK আপলোড করা (Artifact)
+      # ১০. APK আর্টিফ্যাক্ট হিসেবে আপলোড করা
       - name: Upload JARVIS APK
         uses: actions/upload-artifact@v4
         with:
