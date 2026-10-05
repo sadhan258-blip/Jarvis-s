@@ -16,11 +16,15 @@ jobs:
 
     steps:
 
+      # =========================================================
       # 1. Download repository
+      # =========================================================
       - name: Checkout
         uses: actions/checkout@v4
 
+      # =========================================================
       # 2. Extract JARVIS ZIP files if present
+      # =========================================================
       - name: Extract JARVIS Project
         shell: bash
         run: |
@@ -34,7 +38,7 @@ jobs:
 
           ZIP_COUNT=$(find "$GITHUB_WORKSPACE" \
             -type f \
-            -name "*.zip" \
+            -iname "*.zip" \
             -not -path "*/.git/*" \
             -not -path "*/_jarvis_projects/*" \
             | wc -l)
@@ -61,7 +65,7 @@ jobs:
             done < <(
               find "$GITHUB_WORKSPACE" \
                 -type f \
-                -name "*.zip" \
+                -iname "*.zip" \
                 -not -path "*/.git/*" \
                 -not -path "*/_jarvis_projects/*"
             )
@@ -72,7 +76,9 @@ jobs:
 
           echo "Extraction completed."
 
-      # 3. Find Android/Gradle project
+      # =========================================================
+      # 3. Find Android Project
+      # =========================================================
       - name: Find Android Project
         shell: bash
         run: |
@@ -84,17 +90,22 @@ jobs:
 
           PROJECT_DIR=""
 
-          while IFS= read -r -d '' GRADLEW; do
+          # -----------------------------------------------------
+          # First method:
+          # Find app/build.gradle or app/build.gradle.kts
+          # -----------------------------------------------------
+          while IFS= read -r -d '' APP_GRADLE; do
 
-            DIR="$(dirname "$GRADLEW")"
+            APP_DIR="$(dirname "$APP_GRADLE")"
+            CANDIDATE_DIR="$(dirname "$APP_DIR")"
 
-            echo "Checking:"
-            echo "$DIR"
+            echo "Checking Android project:"
+            echo "$CANDIDATE_DIR"
 
-            if [ -f "$DIR/settings.gradle" ] || \
-               [ -f "$DIR/settings.gradle.kts" ]; then
+            if [ -f "$CANDIDATE_DIR/settings.gradle" ] || \
+               [ -f "$CANDIDATE_DIR/settings.gradle.kts" ]; then
 
-              PROJECT_DIR="$DIR"
+              PROJECT_DIR="$CANDIDATE_DIR"
               break
 
             fi
@@ -102,20 +113,56 @@ jobs:
           done < <(
             find "$GITHUB_WORKSPACE" \
               -type f \
-              -name "gradlew" \
+              -name "build.gradle" -o -name "build.gradle.kts" \
+              -path "*/app/*" \
               -not -path "*/.git/*" \
               -print0
           )
 
-          # Fallback: look for build.gradle/settings.gradle
+          # -----------------------------------------------------
+          # Second method:
+          # Find gradlew + settings.gradle
+          # -----------------------------------------------------
+          if [ -z "$PROJECT_DIR" ]; then
+
+            while IFS= read -r -d '' GRADLEW; do
+
+              DIR="$(dirname "$GRADLEW")"
+
+              echo "Checking Gradle project:"
+              echo "$DIR"
+
+              if [ -f "$DIR/settings.gradle" ] || \
+                 [ -f "$DIR/settings.gradle.kts" ]; then
+
+                PROJECT_DIR="$DIR"
+                break
+
+              fi
+
+            done < <(
+              find "$GITHUB_WORKSPACE" \
+                -type f \
+                -name "gradlew" \
+                -not -path "*/.git/*" \
+                -print0
+            )
+
+          fi
+
+          # -----------------------------------------------------
+          # Third method:
+          # Search directly for settings.gradle
+          # -----------------------------------------------------
           if [ -z "$PROJECT_DIR" ]; then
 
             while IFS= read -r -d '' SETTINGS; do
 
               DIR="$(dirname "$SETTINGS")"
 
-              if [ -f "$DIR/build.gradle" ] || \
-                 [ -f "$DIR/build.gradle.kts" ]; then
+              if [ -d "$DIR/app" ] && \
+                 { [ -f "$DIR/build.gradle" ] || \
+                   [ -f "$DIR/build.gradle.kts" ]; }; then
 
                 PROJECT_DIR="$DIR"
                 break
@@ -132,6 +179,9 @@ jobs:
 
           fi
 
+          # -----------------------------------------------------
+          # If project still not found
+          # -----------------------------------------------------
           if [ -z "$PROJECT_DIR" ]; then
 
             echo ""
@@ -140,23 +190,125 @@ jobs:
             echo "======================================"
 
             echo ""
-            echo "Repository files:"
+            echo "Searching repository files..."
+
             find "$GITHUB_WORKSPACE" \
-              -maxdepth 6 \
+              -maxdepth 8 \
               -type f \
               -not -path "*/.git/*" \
               | sort
 
             exit 1
+
           fi
 
+          # -----------------------------------------------------
+          # Convert to absolute path
+          # -----------------------------------------------------
           PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 
           echo ""
           echo "======================================"
-          echo "Android project FOUND"
+          echo "ANDROID PROJECT FOUND"
           echo "======================================"
 
           echo "PROJECT_DIR=$PROJECT_DIR"
 
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$
+          echo ""
+          echo "Project contents:"
+          ls -la "$PROJECT_DIR"
+
+          echo ""
+          echo "App contents:"
+          ls -la "$PROJECT_DIR/app"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      # =========================================================
+      # 4. Setup Java 17
+      # =========================================================
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # =========================================================
+      # 5. Setup Gradle
+      # =========================================================
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # =========================================================
+      # 6. Prepare Gradle Wrapper
+      # =========================================================
+      - name: Prepare Gradle Wrapper
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_DIR"
+
+          echo "======================================"
+          echo "Preparing Gradle Wrapper"
+          echo "======================================"
+
+          if [ ! -f "./gradlew" ]; then
+            echo "ERROR: gradlew was not found."
+            echo ""
+            echo "Project directory:"
+            pwd
+            echo ""
+            echo "Files:"
+            find . -maxdepth 3 -type f | sort
+            exit 1
+          fi
+
+          chmod +x ./gradlew
+
+          echo "Gradle wrapper ready."
+
+      # =========================================================
+      # 7. Clean project
+      # =========================================================
+      - name: Clean Project
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_DIR"
+
+          echo "======================================"
+          echo "Cleaning project"
+          echo "======================================"
+
+          ./gradlew clean --stacktrace
+
+      # =========================================================
+      # 8. Build Debug APK
+      # =========================================================
+      - name: Build JARVIS Debug APK
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_DIR"
+
+          echo "======================================"
+          echo "BUILDING JARVIS APK"
+          echo "======================================"
+
+          ./gradlew assembleDebug --stacktrace
+
+          echo ""
+          echo "======================================"
+          echo "APK BUILD COMPLETED"
+          echo "======================================"
+
+          find "$PROJECT_DIR" \
+            -type f \
+            -name "*.apk" \
+            -print
+
+      # =========================================================
+     
