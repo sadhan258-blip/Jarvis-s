@@ -1,4 +1,4 @@
-name: Build JARVIS APK
+name: Build Android APK
 
 on:
   workflow_dispatch:
@@ -11,75 +11,146 @@ permissions:
 
 jobs:
   build:
-    name: Build Android APK
     runs-on: ubuntu-latest
 
     steps:
+
+      # 1. Checkout
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      # 2. JDK 17
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle 8.9
+      # 3. Gradle
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
 
+      # 4. Search / extract Android project
       - name: Find Android Project
         shell: bash
         run: |
-          echo "Searching for Android project..."
+          set -e
 
+          echo "===================================="
+          echo "Searching for Android project..."
+          echo "===================================="
+
+          # Extract ZIP files if any exist
+          find . -type f -iname "*.zip" -print0 | while IFS= read -r -d '' zipfile
+          do
+            echo "Found ZIP: $zipfile"
+            mkdir -p extracted
+            unzip -o "$zipfile" -d extracted || true
+          done
+
+          # Look for Gradle Android projects
           PROJECT_DIR=""
 
-          if [ -f "settings.gradle" ] || [ -f "settings.gradle.kts" ]; then
-            PROJECT_DIR="."
+          while IFS= read -r settings; do
+            dir="$(dirname "$settings")"
+
+            if find "$dir" -maxdepth 2 \
+              -type f \
+              -name "build.gradle" -o -name "build.gradle.kts" \
+              | grep -q .; then
+
+              PROJECT_DIR="$dir"
+              break
+            fi
+          done < <(
+            find . \
+              -type f \
+              -name "settings.gradle" -o -name "settings.gradle.kts" \
+              -not -path "./.git/*"
+          )
+
+          if [ -n "$PROJECT_DIR" ]; then
+            echo "Android project found:"
+            echo "$PROJECT_DIR"
+            echo "$PROJECT_DIR" > android_project_dir.txt
           else
-            PROJECT_DIR=$(find . -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
-              -not -path "./.git/*" \
-              -printf '%h\n' | head -n 1)
+            echo "No Android project found."
+            echo "A clean Android project will be created."
+            echo "CREATE_NEW_PROJECT=true" > android_project_dir.txt
           fi
 
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: Android Gradle project not found."
-            exit 1
-          fi
-
-          echo "Android project found at: $PROJECT_DIR"
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-      - name: Build JARVIS APK
+      # 5. Create fallback Android project if necessary
+      - name: Create Android Project If Missing
         shell: bash
         run: |
-          cd "$PROJECT_DIR"
+          set -e
 
-          echo "Building JARVIS APK..."
+          if grep -q "CREATE_NEW_PROJECT=true" android_project_dir.txt; then
 
-          if [ -f "./gradlew" ]; then
-            chmod +x ./gradlew
-            ./gradlew assembleDebug --stacktrace
-          else
-            gradle assembleDebug --stacktrace
-          fi
+            echo "Creating JARVIS Android project..."
 
-      - name: Find APK
-        shell: bash
-        run: |
-          echo "Searching for APK..."
+            mkdir -p jarvis-app/app/src/main/java/com/jarvis/ai
+            mkdir -p jarvis-app/app/src/main/res/values
 
-          find "$PROJECT_DIR" -type f -name "*.apk" \
-            -not -path "*/build/intermediates/*" \
-            -print
+            cat > jarvis-app/settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
 
-      - name: Upload JARVIS APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: JARVIS-APK
-          path: |
-            **/build/outputs/apk/**/*.apk
-            **/build/outputs/apk/*.apk
-          if-no-files-found: error
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = "JARVIS"
+          include(":app")
+          EOF
+
+            cat > jarvis-app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.7.3' apply false
+          }
+          EOF
+
+            cat > jarvis-app/app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'com.jarvis.ai'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId 'com.jarvis.ai'
+                  minSdk 24
+                  targetSdk 35
+                  versionCode 1
+                  versionName '1.0'
+              }
+          }
+          EOF
+
+            cat > jarvis-app/app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <application
+                  android:allowBackup="false"
+                  android:label="JARVIS"
+                  android:theme="@style/AppTheme">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LA
