@@ -11,11 +11,9 @@ permissions:
 
 jobs:
   build:
-    name: Build Jarvis APK
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Checkout Jarvis
         uses: actions/checkout@v4
 
@@ -26,28 +24,25 @@ jobs:
           java-version: '17'
 
       - name: Set Android SDK
-        uses: android-actions/setup-android@v4
-        with:
-          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+        uses: android-actions/setup-android@v3
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
 
-      - name: Make Gradle executable
-        run: chmod +x gradlew
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses || true
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: gradle :app:assembleDebug --stacktrace
 
       - name: Find APK
-        run: |
-          echo "APK files:"
-          find . -type f -name "*.apk" -print
+        run: find . -type f -name "*.apk" -print
 
       - name: Upload Jarvis APK
         uses: actions/upload-artifact@v4
         with:
           name: Jarvis-APK
-          path: |
-            **/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
