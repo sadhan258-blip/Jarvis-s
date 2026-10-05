@@ -26,7 +26,9 @@ jobs:
         run: |
           set -e
 
-          echo "Checking repository..."
+          echo "======================================"
+          echo "Checking repository for ZIP files"
+          echo "======================================"
 
           mkdir -p "$GITHUB_WORKSPACE/_jarvis_projects"
 
@@ -40,13 +42,20 @@ jobs:
           echo "ZIP files found: $ZIP_COUNT"
 
           if [ "$ZIP_COUNT" -gt 0 ]; then
+
             while IFS= read -r ZIPFILE; do
-              echo "Extracting: $ZIPFILE"
+
+              echo "--------------------------------------"
+              echo "Extracting:"
+              echo "$ZIPFILE"
+              echo "--------------------------------------"
 
               ZIPNAME=$(basename "$ZIPFILE" .zip)
+
               DEST="$GITHUB_WORKSPACE/_jarvis_projects/$ZIPNAME"
 
               mkdir -p "$DEST"
+
               unzip -o "$ZIPFILE" -d "$DEST"
 
             done < <(
@@ -56,6 +65,9 @@ jobs:
                 -not -path "*/.git/*" \
                 -not -path "*/_jarvis_projects/*"
             )
+
+          else
+            echo "No ZIP files found."
           fi
 
           echo "Extraction completed."
@@ -70,4 +82,81 @@ jobs:
           echo "Searching for JARVIS Android project"
           echo "======================================"
 
-          PROJECT_DIR
+          PROJECT_DIR=""
+
+          while IFS= read -r -d '' GRADLEW; do
+
+            DIR="$(dirname "$GRADLEW")"
+
+            echo "Checking:"
+            echo "$DIR"
+
+            if [ -f "$DIR/settings.gradle" ] || \
+               [ -f "$DIR/settings.gradle.kts" ]; then
+
+              PROJECT_DIR="$DIR"
+              break
+
+            fi
+
+          done < <(
+            find "$GITHUB_WORKSPACE" \
+              -type f \
+              -name "gradlew" \
+              -not -path "*/.git/*" \
+              -print0
+          )
+
+          # Fallback: look for build.gradle/settings.gradle
+          if [ -z "$PROJECT_DIR" ]; then
+
+            while IFS= read -r -d '' SETTINGS; do
+
+              DIR="$(dirname "$SETTINGS")"
+
+              if [ -f "$DIR/build.gradle" ] || \
+                 [ -f "$DIR/build.gradle.kts" ]; then
+
+                PROJECT_DIR="$DIR"
+                break
+
+              fi
+
+            done < <(
+              find "$GITHUB_WORKSPACE" \
+                -type f \
+                -name "settings.gradle" -o -name "settings.gradle.kts" \
+                -not -path "*/.git/*" \
+                -print0
+            )
+
+          fi
+
+          if [ -z "$PROJECT_DIR" ]; then
+
+            echo ""
+            echo "======================================"
+            echo "ERROR: Android project not found."
+            echo "======================================"
+
+            echo ""
+            echo "Repository files:"
+            find "$GITHUB_WORKSPACE" \
+              -maxdepth 6 \
+              -type f \
+              -not -path "*/.git/*" \
+              | sort
+
+            exit 1
+          fi
+
+          PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
+
+          echo ""
+          echo "======================================"
+          echo "Android project FOUND"
+          echo "======================================"
+
+          echo "PROJECT_DIR=$PROJECT_DIR"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$
