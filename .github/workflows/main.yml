@@ -1,11 +1,7 @@
-package com.example.calculator;
-
 import android.os.Bundle;
-import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
-
 import androidx.appcompat.app.AppCompatActivity;
 
 public class MainActivity extends AppCompatActivity {
@@ -22,43 +18,46 @@ public class MainActivity extends AppCompatActivity {
         number2 = findViewById(R.id.number2);
         result = findViewById(R.id.result);
 
-        findViewById(R.id.add).setOnClickListener(v -> calculate("+"));
-        findViewById(R.id.subtract).setOnClickListener(v -> calculate("-"));
-        findViewById(R.id.multiply).setOnClickListener(v -> calculate("*"));
-        findViewById(R.id.divide).setOnClickListener(v -> calculate("/"));
+        Button add = findViewById(R.id.add);
+        Button subtract = findViewById(R.id.subtract);
+        Button multiply = findViewById(R.id.multiply);
+        Button divide = findViewById(R.id.divide);
+
+        add.setOnClickListener(v -> calculate("+"));
+        subtract.setOnClickListener(v -> calculate("-"));
+        multiply.setOnClickListener(v -> calculate("*"));
+        divide.setOnClickListener(v -> calculate("/"));
     }
 
     private void calculate(String operation) {
-        try {
-            double a = Double.parseDouble(number1.getText().toString());
-            double b = Double.parseDouble(number2.getText().toString());
-            double answer;
 
-            switch (operation) {
-                case "+":
-                    answer = a + b;
-                    break;
-                case "-":
-                    answer = a - b;
-                    break;
-                case "*":
-                    answer = a * b;
-                    break;
-                case "/":
-                    if (b == 0) {
-                        result.setText("0 দিয়ে ভাগ করা যাবে না");
-                        return;
-                    }
-                    answer = a / b;
-                    break;
-                default:
+        double a = Double.parseDouble(number1.getText().toString());
+        double b = Double.parseDouble(number2.getText().toString());
+
+        double answer = 0;
+
+        switch (operation) {
+            case "+":
+                answer = a + b;
+                break;
+
+            case "-":
+                answer = a - b;
+                break;
+
+            case "*":
+                answer = a * b;
+                break;
+
+            case "/":
+                if (b == 0) {
+                    result.setText("0 দিয়ে ভাগ করা যাবে না");
                     return;
-            }
-
-            result.setText("ফলাফল: " + answer);
-
-        } catch (Exception e) {
-            result.setText("দুটি সংখ্যা লিখুন");
+                }
+                answer = a / b;
+                break;
         }
+
+        result.setText("Result: " + answer);
     }
 }
