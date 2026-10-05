@@ -2,6 +2,7 @@ name: Build JARVIS APK
 
 on:
   workflow_dispatch:
+
   push:
     branches:
       - main
@@ -11,7 +12,6 @@ permissions:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
@@ -27,42 +27,56 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # 3. Install unzip
+      # 3. Setup Android SDK
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      # 4. Install unzip
       - name: Install unzip
         shell: bash
         run: |
           sudo apt-get update
           sudo apt-get install -y unzip
 
-      # 4. Extract JARVIS ZIP
+      # 5. Setup Gradle
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      # 6. Extract JARVIS ZIP
       - name: Extract JARVIS Project
         shell: bash
         run: |
           set -e
 
+          rm -rf extracted
           mkdir -p extracted
 
           ZIP_FILE=$(find . \
             -path './.git' -prune -o \
             -type f \
-            \( -iname '*.zip' \) \
+            -iname '*.zip' \
             -print -quit)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "No ZIP file found."
+            echo "ERROR: No ZIP file found."
             exit 1
           fi
 
-          echo "Found ZIP: $ZIP_FILE"
+          echo "Found ZIP:"
+          echo "$ZIP_FILE"
 
           unzip -o "$ZIP_FILE" -d extracted
 
+          echo ""
           echo "ZIP extracted successfully."
 
-          echo "Extracted files:"
-          find extracted -maxdepth 4 -type f | head -200
+          echo ""
+          echo "===== EXTRACTED FILES ====="
+          find extracted -maxdepth 5 -type f | sort | head -300
 
-      # 5. Find Android Project
+      # 7. Find Android Project
       - name: Find Android Project
         shell: bash
         run: |
@@ -85,18 +99,34 @@ jobs:
           done < <(
             find extracted \
               -type f \
-              \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+              \
+                -name "settings.gradle" \
+                -o \
+                -name "settings.gradle.kts" \
+              \
               -print
           )
 
           if [ -z "$PROJECT_DIR" ]; then
+
             echo "ERROR: Android project was not found."
+
             echo ""
             echo "Searching for Gradle files:"
+
             find extracted \
               -type f \
-              \( -name "build.gradle" -o -name "build.gradle.kts" \) \
+              \
+                -name "build.gradle" \
+                -o \
+                -name "build.gradle.kts" \
+                -o \
+                -name "settings.gradle" \
+                -o \
+                -name "settings.gradle.kts" \
+              \
               -print
+
             exit 1
           fi
 
@@ -105,7 +135,7 @@ jobs:
 
           echo "$PROJECT_DIR" > project_path.txt
 
-      # 6. Move project to workspace
+      # 8. Prepare Android Project
       - name: Prepare Android Project
         shell: bash
         run: |
@@ -116,83 +146,75 @@ jobs:
           echo "Preparing project from:"
           echo "$PROJECT_DIR"
 
+          rm -rf android-project
           mkdir -p android-project
 
           cp -R "$PROJECT_DIR"/. android-project/
 
           echo ""
-          echo "Android project structure:"
-          find android-project -maxdepth 3 -type f | sort | head -200
+          echo "===== ANDROID PROJECT ====="
 
-      # 7. Check Gradle Wrapper
-      - name: Check Gradle Wrapper
-        shell: bash
-        working-directory: android-project
-        run: |
-          if [ -f "./gradlew" ]; then
-            chmod +x ./gradlew
-            echo "Gradle wrapper found."
-          else
-            echo "ERROR: gradlew not found."
-            echo "The Android project must contain Gradle Wrapper files."
-            find . -maxdepth 3 -type f | sort
-            exit 1
-          fi
-
-      # 8. Show Android Project Structure
-      - name: Show Project Structure
-        shell: bash
-        working-directory: android-project
-        run: |
-          echo "===== PROJECT ROOT ====="
-          ls -la
-
-          echo ""
-          echo "===== GRADLE FILES ====="
-          find . \
+          find android-project \
             -maxdepth 4 \
             -type f \
-            \( -name "settings.gradle" \
-            -o -name "settings.gradle.kts" \
-            -o -name "build.gradle" \
-            -o -name "build.gradle.kts" \
-            -o -name "gradle.properties" \) \
-            -print
+            | sort \
+            | head -300
 
-      # 9. Clean Project
-      - name: Clean Project
-        shell: bash
-        working-directory: android-project
-        run: |
-          chmod +x ./gradlew
-          ./gradlew clean --stacktrace
-
-      # 10. Build JARVIS Debug APK
-      - name: Build JARVIS Debug APK
-        shell: bash
-        working-directory: android-project
-        run: |
-          chmod +x ./gradlew
-          ./gradlew assembleDebug --stacktrace --info
-
-      # 11. Find APK
-      - name: Find APK
+      # 9. Create Gradle Wrapper if missing
+      - name: Create Gradle Wrapper
         shell: bash
         run: |
           set -e
 
-          echo "Searching for APK..."
+          cd android-project
 
-          find android-project \
-            -type f \
-            -name "*.apk" \
-            -print
+          echo "Checking Gradle Wrapper..."
 
-      # 12. Upload APK
-      - name: Upload JARVIS APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: JARVIS-APK
-          path: |
-            android-project/**/build/outputs/apk/**/*.apk
-          if-no-files-found: error
+          if [ -f "./gradlew" ] && \
+             [ -f "./gradle/wrapper/gradle-wrapper.jar" ] && \
+             [ -f "./gradle/wrapper/gradle-wrapper.properties" ]; then
+
+            echo "Gradle Wrapper already exists."
+
+          else
+
+            echo "Gradle Wrapper is missing."
+            echo "Creating a new Gradle Wrapper..."
+
+            cd ..
+
+            rm -rf wrapper-generator
+            mkdir -p wrapper-generator
+
+            cd wrapper-generator
+
+            cat > settings.gradle <<'EOF'
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = "WrapperGenerator"
+EOF
+
+            cat > build.gradle <<'EOF'
+plugins {
+}
+EOF
+
+            gradle wrapper --gradle-version 8.7
+
+            cd ..
+
+            cp wrapper-generator/gradlew android-project
