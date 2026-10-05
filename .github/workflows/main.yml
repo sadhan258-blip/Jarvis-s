@@ -1,63 +1,36 @@
-import android.os.Bundle;
-import android.widget.Button;
-import android.widget.EditText;
-import android.widget.TextView;
-import androidx.appcompat.app.AppCompatActivity;
+name: Build JARVIS APK
 
-public class MainActivity extends AppCompatActivity {
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
 
-    EditText number1, number2;
-    TextView result;
+jobs:
+  build:
+    runs-on: ubuntu-latest
 
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-        number1 = findViewById(R.id.number1);
-        number2 = findViewById(R.id.number2);
-        result = findViewById(R.id.result);
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
-        Button add = findViewById(R.id.add);
-        Button subtract = findViewById(R.id.subtract);
-        Button multiply = findViewById(R.id.multiply);
-        Button divide = findViewById(R.id.divide);
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
-        add.setOnClickListener(v -> calculate("+"));
-        subtract.setOnClickListener(v -> calculate("-"));
-        multiply.setOnClickListener(v -> calculate("*"));
-        divide.setOnClickListener(v -> calculate("/"));
-    }
+      - name: Grant execute permission
+        run: chmod +x gradlew
 
-    private void calculate(String operation) {
+      - name: Build APK
+        run: ./gradlew assembleDebug
 
-        double a = Double.parseDouble(number1.getText().toString());
-        double b = Double.parseDouble(number2.getText().toString());
-
-        double answer = 0;
-
-        switch (operation) {
-            case "+":
-                answer = a + b;
-                break;
-
-            case "-":
-                answer = a - b;
-                break;
-
-            case "*":
-                answer = a * b;
-                break;
-
-            case "/":
-                if (b == 0) {
-                    result.setText("0 দিয়ে ভাগ করা যাবে না");
-                    return;
-                }
-                answer = a / b;
-                break;
-        }
-
-        result.setText("Result: " + answer);
-    }
-}
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: JARVIS-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
