@@ -14,7 +14,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
@@ -27,7 +28,7 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Extract JARVIS Android Project
         shell: bash
@@ -35,12 +36,14 @@ jobs:
           set -e
 
           if [ -f "Jarvis-Android-Project.zip" ]; then
-            echo "ZIP found. Extracting..."
+            echo "JARVIS ZIP found."
             rm -rf jarvis_project
             mkdir -p jarvis_project
             unzip -q "Jarvis-Android-Project.zip" -d jarvis_project
+            echo "JARVIS project extracted."
           else
-            echo "No ZIP found. Using repository directly."
+            echo "No JARVIS ZIP found."
+            echo "Using repository files directly."
           fi
 
       - name: Find Android Project
@@ -50,60 +53,16 @@ jobs:
 
           PROJECT_DIR=""
 
-          for dir in "." "./jarvis_project" "./jarvis_project/Jarvis-Android-Project"; do
-            if [ -f "$dir/settings.gradle" ] || [ -f "$dir/settings.gradle.kts" ]; then
-              PROJECT_DIR="$dir"
-              break
-            fi
-          done
+          echo "Searching for Android project..."
 
-          if [ -z "$PROJECT_DIR" ]; then
+          if [ -f "./settings.gradle" ] || [ -f "./settings.gradle.kts" ]; then
+            PROJECT_DIR="."
+          else
             PROJECT_DIR=$(find . \
               -path "./.git" -prune -o \
-              -path "./jarvis_project/.git" -prune -o \
-              -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
-              -print -quit | xargs -r dirname)
-          fi
+              -type f \
+                -name "settings.gradle" -o \
+                -name "settings.gradle.kts" \
+              -print -quit)
 
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: Android project was not found."
-            exit 1
-          fi
-
-          PROJECT_DIR="${PROJECT_DIR#./}"
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-      - name: Make Gradle executable
-        shell: bash
-        run: |
-          if [ -f "$PROJECT_DIR/gradlew" ]; then
-            chmod +x "$PROJECT_DIR/gradlew"
-          else
-            echo "ERROR: gradlew not found in $PROJECT_DIR"
-            exit 1
-          fi
-
-      - name: Build Debug APK
-        shell: bash
-        run: |
-          cd "$PROJECT_DIR"
-          ./gradlew assembleDebug --stacktrace
-
-      - name: Find and Stage APK
-        shell: bash
-        run: |
-          APK_PATH=$(find "$PROJECT_DIR" -type f -name "*.apk" -print -quit)
-
-          if [ -z "$APK_PATH" ]; then
-            echo "ERROR: APK was not created."
-            exit 1
-          fi
-
-          cp "$APK_PATH" "$GITHUB_WORKSPACE/JARVIS-debug.apk"
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: JARVIS-APK
-          path: JARVIS-debug.apk
-          if-no-files-found: error
+            if [
